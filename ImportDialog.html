@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Roboto', sans-serif;
+            background-color: #eef2f3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 90%;
+            max-width: 600px;
+        }
+        p {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .button-group {
+            display: flex;
+            width: 100%;
+            gap: 10px;
+        }
+        button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-grow: 1;
+            box-sizing: border-box;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 500;
+            border-radius: 8px;
+            border: none;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            background-image: linear-gradient(to top, #fdfbfb 0%, #ebedee 100%);
+        }
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        .submit-btn {
+            background-image: linear-gradient(to right, #43e97b 0%, #38f9d7 100%); 
+            color: black;
+        }
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            background-image: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
+        }
+        .secondary-btn:hover {
+            background-image: linear-gradient(to top, #d3d3d3 0%, #8a8a8a 100%);
+            color: white;
+            transform: translateY(-2px);
+        }
+        #message {
+            padding: 18px;
+            border-radius: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: center;
+            font-weight: 500;
+            font-size: 1.05em;
+        }
+        .message-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message-error {
+            background-color: #f8d7da;
+            color: #58151c;
+            border: 1px solid #f5c6cb;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+        }
+        #fileNameDisplay {
+            color: #084298;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="mainContent">
+        <h3>Import New Items</h3>
+        <p>
+            Select your <strong>Spool.csv</strong>, <strong>Reel.csv</strong>, or <strong>TOR.csv</strong> files.
+            <br><br>
+            You can select multiple files at once. The script will auto-detect the format (Comma or Tab separated), combine them, and add only new items to your Inventory.
+        </p>
+        
+        <input type="file" id="csvFile" accept=".csv,.txt" multiple>
+        
+        <div class="button-group">
+            <button id="importButton" class="submit-btn" onclick="importCSV()">Import</button>
+            <button class="secondary-btn" onclick="google.script.host.close()">Cancel</button>
+        </div>
+    </div>
+    
+    <div class="container" id="confirmationContent" style="display: none;">
+        <h3>Confirm Import</h3>
+        <p>
+            Are you sure you want to import items from:
+            <br><br>
+            <strong id="fileNameDisplay"></strong>
+            <br><br>
+            This will add new rows to your 'Inventory' sheet.
+        </p>
+        <div class="button-group">
+            <button id="confirmImportButton" class="submit-btn" onclick="proceedWithImport()">Yes, Import</button>
+            <button class="secondary-btn" onclick="cancelImport()">Cancel</button>
+        </div>
+    </div>
+    
+    <div id="message" style="display: none; width: 90%; max-width: 600px;"></div>
+    
+    <div id="closeButton" style="display: none; width: 90%; max-width: 600px; margin-top: 15px;">
+        <button class="secondary-btn" style="width: 100%;" onclick="google.script.host.close()">Close</button>
+    </div>
+
+    <script>
+        var filesToImport = []; 
+
+        function importCSV() {
+            var input = document.getElementById('csvFile');
+            if (input.files.length === 0) {
+                var messageDiv = document.getElementById('message');
+                messageDiv.textContent = 'Please select at least one file.';
+                messageDiv.className = 'message-error';
+                messageDiv.style.display = 'block';
+                return;
+            }
+            
+            filesToImport = Array.from(input.files);
+            var fileNames = filesToImport.map(function(f) { return f.name; }).join(', ');
+            document.getElementById('fileNameDisplay').textContent = fileNames;
+            
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('message').style.display = 'none'; 
+            document.getElementById('confirmationContent').style.display = 'flex';
+        }
+        
+        function cancelImport() {
+            filesToImport = [];
+            document.getElementById('confirmationContent').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'flex';
+        }
+
+        function readFileAsText(file) {
+            return new Promise(function(resolve, reject) {
+                var reader = new FileReader();
+                reader.onload = function(e) { resolve(e.target.result); };
+                reader.onerror = function(e) { reject(e); };
+                reader.readAsText(file);
+            });
+        }
+
+        function proceedWithImport() {
+            if (filesToImport.length === 0) return;
+
+            var confirmButton = document.getElementById('confirmImportButton');
+            var messageDiv = document.getElementById('message');
+            
+            confirmButton.disabled = true;
+            confirmButton.textContent = 'Processing...';
+            
+            document.getElementById('confirmationContent').style.display = 'none';
+            messageDiv.textContent = 'Reading and combining files... please wait.';
+            messageDiv.className = '';
+            messageDiv.style.display = 'block';
+
+            Promise.all(filesToImport.map(readFileAsText))
+                .then(function(contents) {
+                    var combinedCsv = "";
+                    
+                    for (var i = 0; i < contents.length; i++) {
+                        var text = contents[i];
+                        if (i === 0) {
+                            combinedCsv += text;
+                        } else {
+                            var firstNewLine = text.indexOf('\n');
+                            if (firstNewLine !== -1) {
+                                if (combinedCsv.slice(-1) !== '\n') combinedCsv += '\n';
+                                combinedCsv += text.substring(firstNewLine + 1);
+                            }
+                        }
+                    }
+                    
+                    google.script.run
+                        .withSuccessHandler(showResult)
+                        .withFailureHandler(showError)
+                        .importNewAssets(combinedCsv);
+                })
+                .catch(function(error) {
+                    showError(error);
+                });
+        }
+        
+        function showResult(response) {
+            var messageDiv = document.getElementById('message');
+            messageDiv.textContent = response;
+            if (response.startsWith('Import complete')) {
+                messageDiv.className = 'message-success';
+            } else {
+                messageDiv.className = 'message-error';
+            }
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('confirmationContent').style.display = 'none';
+            document.getElementById('closeButton').style.display = 'block';
+        }
+        
+        function showError(error) {
+            var messageDiv = document.getElementById('message');
+            messageDiv.textContent = 'Error: ' + error.message;
+            messageDiv.className = 'message-error';
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('confirmationContent').style.display = 'none';
+            document.getElementById('closeButton').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
