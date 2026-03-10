@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+        /* Modern UI Reset & Body Styling */
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+            background-color: #eef2f3; /* New calming background color */
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Main container for consistent layout */
+        .dialog-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px; /* Spacing between elements */
+            width: 90%;
+            max-width: 600px; /* Increased max-width for the 700px dialog */
+        }
+
+        /* Styling for form labels */
+        label {
+            font-weight: 500;
+            color: #333;
+            width: 100%;
+            text-align: left;
+        }
+
+        /* Styling for text inputs */
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #4facfe;
+        }
+
+        /* Container for buttons to sit side-by-side */
+        .button-group {
+            display: flex;
+            width: 100%;
+            gap: 10px;
+        }
+
+        /* Base Button Style */
+        button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-grow: 1; /* Allows buttons in a group to share space */
+            box-sizing: border-box;
+            margin: 0 !important;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 500;
+            border-radius: 8px;
+            border: none;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            background-image: linear-gradient(to top, #fdfbfb 0%, #ebedee 100%);
+        }
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        /* Message Styling - Higher contrast for readability */
+        #message {
+            padding: 18px;
+            border-radius: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: center;
+            font-weight: 500;
+            font-size: 1.05em;
+        }
+        .message-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message-error {
+            background-color: #f8d7da;
+            color: #58151c;
+            border: 1px solid #f5c6cb;
+        }
+
+        /* Unique Button Colors & Hovers */
+        .submit-btn {
+            background-image: linear-gradient(to right, #43e97b 0%, #38f9d7 100%);
+            color: white;
+        }
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .secondary-btn:hover {
+            background-image: linear-gradient(to top, #d3d3d3 0%, #8a8a8a 100%);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="dialog-container">
+        <form id="borrowForm" style="width: 100%; display: flex; flex-direction: column; gap: 15px;">
+            <div>
+                <label for="pcName">PC Name / Borrower</label>
+                <input type="text" id="pcName" name="pcName" required>
+            </div>
+            <div>
+                <label for="assetId">Item No.</label>
+                <!-- Added list="itemList" for autofill and autocomplete="off" to prevent browser history mixing -->
+                <input type="text" id="assetId" name="assetId" list="itemList" required autocomplete="off">
+                <!-- Data List Container -->
+                <datalist id="itemList"></datalist>
+            </div>
+            <div class="button-group">
+                <button type="submit" class="submit-btn">Check Out Item</button>
+                <button type="button" class="secondary-btn" onclick="openDialog(this, 'showMainMenuDialog')">Back to Menu</button>
+            </div>
+        </form>
+
+        <div id="message" style="display: none;"></div>
+        
+        <div id="actionButtons" style="display: none; width: 100%; flex-direction: column; gap: 15px;">
+            <div class="button-group">
+                <button class="submit-btn" onclick="resetForm()">Check Out Another</button>
+                <button class="secondary-btn" onclick="openDialog(this, 'showMainMenuDialog')">Main Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var isSubmitting = false; // Flag to prevent multiple submissions
+
+        function openDialog(button, functionName) {
+            var buttons = document.querySelectorAll('.dialog-container button');
+            buttons.forEach(function(btn) { btn.disabled = true; });
+            if (button) { button.textContent = 'Loading...'; }
+
+            google.script.run
+                .withSuccessHandler(function() {
+                    google.script.host.close();
+                })
+                .withFailureHandler(function(error) {
+                    alert('Could not open dialog: ' + error.message);
+                    window.location.reload(); // Reload dialog on failure to reset state
+                })
+                [functionName]();
+        }
+
+        function resetForm() {
+            document.getElementById('actionButtons').style.display = 'none';
+            document.getElementById('message').style.display = 'none';
+            document.getElementById('borrowForm').style.display = 'flex';
+            // Keep PC Name populated for speed
+            // document.getElementById('pcName').value = ''; 
+            document.getElementById('assetId').value = '';
+            document.getElementById('assetId').focus();
+            isSubmitting = false; 
+        }
+
+        // LOAD AUTOFILL DATA
+        function loadAutofillData() {
+            google.script.run.withSuccessHandler(function(items) {
+                var dataList = document.getElementById('itemList');
+                items.forEach(function(item) {
+                    var option = document.createElement('option');
+                    option.value = item;
+                    dataList.appendChild(option);
+                });
+            }).getAssetIds();
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            // Initialize Autofill
+            loadAutofillData();
+
+            document.getElementById('pcName').focus();
+            
+            // Listen for 'Enter' key on pcName field
+            document.getElementById('pcName').addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault(); // Stop default 'Enter' behavior
+                    document.getElementById('assetId').focus(); // Move focus to assetId
+                }
+            });
+            
+            // Listen for 'Enter' key on assetId field
+            document.getElementById('assetId').addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault(); // Stop default 'Enter' behavior
+                    // Check if both fields have values before submitting
+                    if (document.getElementById('pcName').value && document.getElementById('assetId').value) {
+                        document.getElementById('borrowForm').dispatchEvent(new Event('submit', { cancelable: true }));
+                    }
+                }
+            });
+        });
+
+        document.getElementById('borrowForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            if (isSubmitting) {
+                return; // Don't submit if already submitting
+            }
+            isSubmitting = true; // Set flag
+            
+            var messageDiv = document.getElementById('message');
+            messageDiv.textContent = 'Processing...';
+            messageDiv.className = '';
+            messageDiv.style.display = 'block';
+
+            google.script.run.withSuccessHandler(function(response) {
+                messageDiv.textContent = response;
+                if (response.startsWith('Success')) {
+                    messageDiv.className = 'message-success';
+                } else {
+                    messageDiv.className = 'message-error';
+                }
+                document.getElementById('borrowForm').style.display = 'none';
+                document.getElementById('actionButtons').style.display = 'flex';
+            }).processBorrowForm(this);
+        });
+    </script>
+</body>
+</html>
