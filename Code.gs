@@ -2,6 +2,7 @@
  * @OnlyCurrentDoc
  * Spool and Reel Management System
  * Updated: Import now supports TOR.csv and auto-detects Tab vs Comma delimiters.
+ * Updated: Auto-add unregistered items to Master Inventory during checkout.
  */
 
 // --- CONFIGURATION & CONSTANTS ---
@@ -25,9 +26,7 @@ const COLS_HISTORY = {
 const COLS_MASTER = {
   ITEM_NO: 0,      // Col A
   DESC: 1,         // Col B
-  LOCATION: 2,     // Col C
-  STATUS: 3,       // Col D
-  ASSIGNED_TO: 4   // Col E
+  LOCATION: 2      // Col C
 };
 
 const STATUS = {
@@ -42,7 +41,7 @@ function onOpen(e) {
       .createMenu('Spool/Reel Management')
       .addItem('Open Main Menu', 'showMainMenuDialog')
       .addSeparator()
-      .addItem('Import New Items', 'showImportDialog')
+      .addItem('Update Inventory', 'showImportDialog')
       .addToUi();
 
   SpreadsheetApp.getActiveSpreadsheet().toast("Click 'Spool/Reel Management' > 'Open Main Menu' to start.", "System Ready", 8);
@@ -57,7 +56,7 @@ function showReturnDialog(itemNo) {
   SpreadsheetApp.getUi().showModalDialog(html, 'Return Item');
 }
 function showFindDialog()     { createModal('FindDialog', 'Find Item', 700, 500); }
-function showImportDialog()   { createModal('ImportDialog', 'Import New Items', 700, 400); }
+function showImportDialog()   { createModal('ImportDialog', 'Update Inventory', 700, 400); }
 
 function createModal(filename, title, width, height) {
   const html = HtmlService.createHtmlOutputFromFile(filename)
@@ -98,13 +97,19 @@ function processBorrowForm(formObject) {
     }
 
     if (masterRowIndex === -1) {
-      return `Error: Item No. '${itemNo}' not found in the Inventory list. Please Import it first.`;
+      // Auto-add the new item to the Master Inventory sheet
+      masterRowIndex = masterSheet.getLastRow() + 1;
+      const newMasterRow = [];
+      newMasterRow[COLS_MASTER.ITEM_NO] = itemNo;
+      newMasterRow[COLS_MASTER.DESC] = "Auto-added during checkout";
+      newMasterRow[COLS_MASTER.LOCATION] = "";
+      
+      masterSheet.getRange(masterRowIndex, 1, 1, newMasterRow.length).setValues([newMasterRow]);
+      
+      // Update local variables for history logging
+      itemDescription = newMasterRow[COLS_MASTER.DESC];
+      itemLocation = newMasterRow[COLS_MASTER.LOCATION];
     }
-
-    // 3. Execute Updates
-    // Update Master Sheet Status (Visual only)
-    masterSheet.getRange(masterRowIndex, COLS_MASTER.ASSIGNED_TO + 1).setValue(pcName);
-    masterSheet.getRange(masterRowIndex, COLS_MASTER.STATUS + 1).setValue(STATUS.CHECKED_OUT);
 
     // Insert into Item History Log (Top of list)
     historySheet.insertRowAfter(1);
@@ -136,7 +141,7 @@ function processReturnForm(formObject) {
 
     for (let i = 1; i < historyData.length; i++) {
       const row = historyData[i];
-      if (row[COLS_HISTORY.ITEM_NO].toString().toUpperCase() === itemNo && row[COLS_HISTORY.DATE_RETURN] === "") {
+      if (row[COLS_HISTORY.ITEM_NO].toString().toUpperCase() === itemNo && row[COLS_HISTORY.DATE_RETURN].toString().trim() === "") {
         logRowIndex = i + 1; 
         break; 
       }
@@ -158,11 +163,6 @@ function processReturnForm(formObject) {
 
     // 3. Execute Updates
     historySheet.getRange(logRowIndex, COLS_HISTORY.DATE_RETURN + 1).setValue(new Date());
-
-    if (masterRowIndex !== -1) {
-      masterSheet.getRange(masterRowIndex, COLS_MASTER.ASSIGNED_TO + 1).setValue('');
-      masterSheet.getRange(masterRowIndex, COLS_MASTER.STATUS + 1).setValue(STATUS.AVAILABLE);
-    }
     
     return `Success: Item '${itemNo}' has been returned.`;
 
@@ -211,14 +211,7 @@ function findAsset(formObject) {
       }
     }
 
-    // 3. Sync Master Sheet
-    const currentMasterStatus = targetItem[COLS_MASTER.STATUS];
-    if (realStatus !== currentMasterStatus) {
-       masterSheet.getRange(masterRowIndex, COLS_MASTER.STATUS + 1).setValue(realStatus);
-       masterSheet.getRange(masterRowIndex, COLS_MASTER.ASSIGNED_TO + 1).setValue(assignedTo);
-    }
-
-    // 4. Build Output Message
+    // 3. Build Output Message
     let message = `Item No: ${itemNo}\nDescription: ${targetItem[COLS_MASTER.DESC]}\nLocation: ${targetItem[COLS_MASTER.LOCATION]}\nStatus: ${realStatus}`;
 
     if (realStatus === STATUS.CHECKED_OUT) {
@@ -240,59 +233,106 @@ function importNewAssets(csvText) {
   try {
     const { masterSheet } = getSheetsOrThrow();
 
-    let existingItemNos = new Set();
-    const lastRow = masterSheet.getLastRow();
+    const masterRange = masterSheet.getDataRange();
+    const masterData = masterRange.getValues();
+    const existingItemNos = new Map();
     
-    if (lastRow > 1) {
-       const existingData = masterSheet.getRange(2, COLS_MASTER.ITEM_NO + 1, lastRow - 1, 1).getValues();
-       existingItemNos = new Set(existingData.flat().map(id => id.toString().toUpperCase()));
+    // Map existing items to their row index (to allow updating)
+    if (masterData.length > 1) {
+       for (let i = 1; i < masterData.length; i++) {
+         const id = masterData[i][COLS_MASTER.ITEM_NO].toString().toUpperCase().trim();
+         if (id) existingItemNos.set(id, i);
+       }
     }
 
-    // AUTO-DETECT DELIMITER: Check if Tabs exist, otherwise assume Comma
     const delimiter = csvText.indexOf('\t') !== -1 ? '\t' : ',';
-    
     const csvData = Utilities.parseCsv(csvText, delimiter); 
+    
+    if (csvData.length < 2) return "Error: The provided file is empty or lacks data rows.";
+
+    // Dynamic Header Resolution to handle varying CSV structures safely
+    const headers = csvData[0].map(h => h.toString().toLowerCase().trim());
+    let idxItem = headers.findIndex(h => /item|asset|no|id|spool|reel/i.test(h));
+    let idxDesc = headers.findIndex(h => /desc|detail|name/i.test(h));
+    let idxLoc  = headers.findIndex(h => /loc|area|place/i.test(h));
+
+    // Smart fallback to legacy indices or standard indices if dynamic mapping fails
+    if (idxItem === -1) idxItem = csvData[0].length > 2 ? 2 : 0;
+    if (idxDesc === -1) idxDesc = csvData[0].length > 9 ? 9 : 1;
+    if (idxLoc === -1)  idxLoc = csvData[0].length > 3 ? 3 : 2;
+
     const rowsToAdd = [];
-    let stats = { added: 0, skipped: 0 };
+    let stats = { added: 0, updated: 0, skipped: 0 };
+    let needsMasterUpdate = false;
 
-    const CSV_IDX = { ITEM: 2, LOC: 3, DESC: 9 };
-
-    // Start at i=1 to skip header (ImportDialog strips other headers, keeping only the first)
     for (let i = 1; i < csvData.length; i++) {
       const row = csvData[i];
-      
-      // Validation: Must have at least an Item ID (Index 2)
-      // We removed strict length check (row.length < 10) to accommodate messy CSVs
-      if (!row || !row[CSV_IDX.ITEM]) {
+      if (!row || !row[idxItem]) {
         stats.skipped++;
         continue;
       }
       
-      const csvItemNo = row[CSV_IDX.ITEM].toString().toUpperCase().trim();
+      const csvItemNo = row[idxItem].toString().toUpperCase().trim();
       
-      // Skip empty IDs or Existing IDs
-      if (csvItemNo === "" || existingItemNos.has(csvItemNo)) {
+      if (csvItemNo === "") {
         stats.skipped++;
+        continue;
+      }
+      
+      const newDesc = idxDesc !== -1 && row[idxDesc] ? row[idxDesc].trim() : "";
+      const newLoc = idxLoc !== -1 && row[idxLoc] ? row[idxLoc].trim() : "";
+
+      if (existingItemNos.has(csvItemNo)) {
+        // Check for updates to existing items
+        const rowIndex = existingItemNos.get(csvItemNo);
+        
+        // Skip updates for items that were already added in this same file iteration (mapped to -1)
+        if (rowIndex === -1) {
+          stats.skipped++;
+          continue;
+        }
+
+        let updated = false;
+
+        if (newDesc && masterData[rowIndex][COLS_MASTER.DESC] !== newDesc) {
+          masterData[rowIndex][COLS_MASTER.DESC] = newDesc;
+          updated = true;
+        }
+        if (newLoc && masterData[rowIndex][COLS_MASTER.LOCATION] !== newLoc) {
+          masterData[rowIndex][COLS_MASTER.LOCATION] = newLoc;
+          updated = true;
+        }
+
+        if (updated) {
+          stats.updated++;
+          needsMasterUpdate = true;
+        } else {
+          stats.skipped++;
+        }
       } else {
+        // Add completely new item
         const newEntry = [];
         newEntry[COLS_MASTER.ITEM_NO] = csvItemNo;
-        // Use logic to safely access columns even if row is short
-        newEntry[COLS_MASTER.DESC] = row[CSV_IDX.DESC] || "";
-        newEntry[COLS_MASTER.LOCATION] = row[CSV_IDX.LOC] || "";
-        newEntry[COLS_MASTER.STATUS] = STATUS.AVAILABLE;
-        newEntry[COLS_MASTER.ASSIGNED_TO] = "";
+        newEntry[COLS_MASTER.DESC] = newDesc;
+        newEntry[COLS_MASTER.LOCATION] = newLoc;
 
         rowsToAdd.push(newEntry);
-        existingItemNos.add(csvItemNo);
+        existingItemNos.set(csvItemNo, -1); // Mark as added to prevent duplicates in the same CSV
         stats.added++;
       }
     }
 
+    // 1. Write existing updates back to sheet if any changed
+    if (needsMasterUpdate) {
+      masterRange.setValues(masterData);
+    }
+
+    // 2. Append new rows
     if (rowsToAdd.length > 0) {
       masterSheet.getRange(masterSheet.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length).setValues(rowsToAdd);
     }
 
-    return `Import complete: ${stats.added} new items added. ${stats.skipped} skipped/duplicate.`;
+    return `Import complete: ${stats.added} added, ${stats.updated} updated, ${stats.skipped} skipped/unchanged.`;
 
   } catch (e) {
     return `Error: ${e.toString()}`;
@@ -310,9 +350,9 @@ function getSheetsOrThrow() {
   
   if (!masterSheet) {
     masterSheet = ss.insertSheet(SHEET_NAMES.MASTER);
-    const headers = [['Item No.', 'Description', 'Location', 'Status', 'Assigned To']];
-    masterSheet.getRange(1, 1, 1, 5).setValues(headers);
-    masterSheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    const headers = [['Item No.', 'Description', 'Location']];
+    masterSheet.getRange(1, 1, 1, 3).setValues(headers);
+    masterSheet.getRange(1, 1, 1, 3).setFontWeight('bold');
     masterSheet.setFrozenRows(1);
   }
 
@@ -327,7 +367,7 @@ function getLatestHistoryEntry(historySheet, itemNo) {
         row: i + 1,
         borrower: data[i][COLS_HISTORY.BORROWER],
         borrowDate: data[i][COLS_HISTORY.DATE_BORROW],
-        returnDate: data[i][COLS_HISTORY.DATE_RETURN]
+        returnDate: data[i][COLS_HISTORY.DATE_RETURN].toString().trim()
       };
     }
   }
