@@ -100,32 +100,32 @@
 </head>
 <body>
     <div class="container" id="mainContent">
-        <h3>Import New Items</h3>
+        <h3>Update Inventory</h3>
         <p>
-            Select your <strong>Spool.csv</strong>, <strong>Reel.csv</strong>, or <strong>TOR.csv</strong> files.
+            Select your inventory <strong>.csv</strong> files. The filename does not matter.
             <br><br>
-            You can select multiple files at once. The script will auto-detect the format (Comma or Tab separated), combine them, and add only new items to your Inventory.
+            You can select multiple files at once. The script will auto-detect the format (Comma or Tab separated), combine them, update existing item details, and add new items to your Inventory.
         </p>
         
         <input type="file" id="csvFile" accept=".csv,.txt" multiple>
         
         <div class="button-group">
-            <button id="importButton" class="submit-btn" onclick="importCSV()">Import</button>
+            <button id="importButton" class="submit-btn" onclick="importCSV()">Update</button>
             <button class="secondary-btn" onclick="google.script.host.close()">Cancel</button>
         </div>
     </div>
     
     <div class="container" id="confirmationContent" style="display: none;">
-        <h3>Confirm Import</h3>
+        <h3>Confirm Update</h3>
         <p>
-            Are you sure you want to import items from:
+            Are you sure you want to process items from:
             <br><br>
             <strong id="fileNameDisplay"></strong>
             <br><br>
-            This will add new rows to your 'Inventory' sheet.
+            This will update existing details and add new rows to your 'Inventory' sheet.
         </p>
         <div class="button-group">
-            <button id="confirmImportButton" class="submit-btn" onclick="proceedWithImport()">Yes, Import</button>
+            <button id="confirmImportButton" class="submit-btn" onclick="proceedWithImport()">Yes, Update</button>
             <button class="secondary-btn" onclick="cancelImport()">Cancel</button>
         </div>
     </div>
