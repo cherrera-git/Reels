@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+        /* Modern UI Reset & Body Styling */
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+            background-color: #eef2f3; 
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .dialog-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px; 
+            width: 90%;
+            max-width: 600px;
+        }
+
+        label {
+            font-weight: 500;
+            color: #333;
+            width: 100%;
+            text-align: left;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #f79d57; /* Orange focus for Find */
+        }
+
+        .button-group {
+            display: flex;
+            width: 100%;
+            gap: 10px;
+        }
+
+        button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-grow: 1;
+            box-sizing: border-box;
+            margin: 0 !important;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 500;
+            border-radius: 8px;
+            border: none;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            background-image: linear-gradient(to top, #fdfbfb 0%, #ebedee 100%);
+        }
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        #message {
+            padding: 18px;
+            border-radius: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: left; 
+            font-weight: 500;
+            font-size: 1.05em;
+            background-color: #fff3cd; 
+            color: #664d03;
+            border: 1px solid #ffecb5;
+            white-space: pre-wrap; 
+        }
+        .message-error {
+            background-color: #f8d7da !important;
+            color: #58151c !important;
+            border: 1px solid #f5c6cb !important;
+            text-align: center !important;
+        }
+
+        .submit-btn {
+            background-image: linear-gradient(to right, #f8c76b 0%, #f79d57 100%);
+            color: white;
+        }
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .secondary-btn:hover {
+            background-image: linear-gradient(to top, #d3d3d3 0%, #8a8a8a 100%);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="dialog-container">
+        <form id="findForm" style="width: 100%; display: flex; flex-direction: column; gap: 15px;">
+            <div>
+                <label for="assetId">Item No.</label>
+                <input type="text" id="assetId" name="assetId" list="itemList" required autocomplete="off">
+                <datalist id="itemList"></datalist>
+            </div>
+            <div class="button-group">
+                <button type="submit" class="submit-btn" id="submitBtn">Find Item</button>
+                <button type="button" class="secondary-btn" onclick="openDialog(this, 'showMainMenuDialog')">Back to Menu</button>
+            </div>
+        </form>
+
+        <div id="message" style="display: none;"></div>
+
+        <div id="actionButtons" style="display: none; width: 100%; flex-direction: column; gap: 15px;">
+            <div class="button-group">
+                <button class="submit-btn" onclick="resetForm()">Find Another</button>
+                <button class="secondary-btn" onclick="openDialog(this, 'showMainMenuDialog')">Main Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var isSubmitting = false; 
+
+        function openDialog(button, functionName) {
+            var buttons = document.querySelectorAll('.dialog-container button');
+            buttons.forEach(function(btn) { btn.disabled = true; });
+            if (button) { button.textContent = 'Loading...'; }
+
+            google.script.run
+                .withSuccessHandler(function() {
+                    google.script.host.close();
+                })
+                .withFailureHandler(function(error) {
+                    alert('Could not open dialog: ' + error.message);
+                    window.location.reload(); 
+                })
+                [functionName]();
+        }
+
+        function resetForm() {
+            document.getElementById('actionButtons').style.display = 'none';
+            document.getElementById('message').style.display = 'none';
+            document.getElementById('findForm').style.display = 'flex';
+            
+            var assetInput = document.getElementById('assetId');
+            assetInput.value = '';
+            assetInput.disabled = false;
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = 'Find Item';
+            
+            assetInput.focus();
+            isSubmitting = false; 
+        }
+
+        function loadAutofillData() {
+            google.script.run
+                .withSuccessHandler(function(items) {
+                    var dataList = document.getElementById('itemList');
+                    // Clear existing to avoid duplicates if re-run
+                    dataList.innerHTML = ''; 
+                    items.forEach(function(item) {
+                        var option = document.createElement('option');
+                        option.value = item;
+                        dataList.appendChild(option);
+                    });
+                })
+                .withFailureHandler(function(err) {
+                    console.log("Autofill failed to load: " + err.message);
+                })
+                .getAssetIds();
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            loadAutofillData();
+
+            var assetInput = document.getElementById('assetId');
+            assetInput.focus();
+            
+            // Handle 'Enter' key
+            assetInput.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault(); 
+                    if (assetInput.value) {
+                        document.getElementById('findForm').dispatchEvent(new Event('submit', { cancelable: true }));
+                    }
+                }
+            });
+
+            // Handle Form Submission
+            document.getElementById('findForm').addEventListener('submit', function(event) {
+                event.preventDefault();
+                if (isSubmitting) return; 
+                isSubmitting = true; 
+                
+                var messageDiv = document.getElementById('message');
+                var submitBtn = document.getElementById('submitBtn');
+                var assetVal = document.getElementById('assetId').value;
+
+                // UI Updates
+                messageDiv.textContent = 'Searching...';
+                messageDiv.className = '';
+                messageDiv.style.display = 'block';
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Searching...';
+                document.getElementById('assetId').disabled = true;
+
+                // Call Server - passing explicit object instead of 'this' (form)
+                google.script.run
+                    .withSuccessHandler(function(response) {
+                        messageDiv.innerHTML = response.replace(/\n/g, '<br>');
+                        
+                        if (response.startsWith('Error')) {
+                            messageDiv.className = 'message-error';
+                        } else {
+                            messageDiv.className = ''; 
+                        }
+                        document.getElementById('findForm').style.display = 'none';
+                        document.getElementById('actionButtons').style.display = 'flex';
+                    })
+                    .withFailureHandler(function(error) {
+                        messageDiv.textContent = 'System Error: ' + error.message;
+                        messageDiv.className = 'message-error';
+                        
+                        // Reset UI state to allow retry
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Find Item';
+                        document.getElementById('assetId').disabled = false;
+                        isSubmitting = false;
+                    })
+                    .findAsset({ assetId: assetVal });
+            });
+        });
+    </script>
+</body>
+</html>
