@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <style>
+        /* Shared CSS for consistent theming */
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+            background-color: #eef2f3;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            /* Changed to stretch to ensure buttons fill the width uniformly */
+            align-items: stretch; 
+            justify-content: center;
+            gap: 20px;
+            width: 90%;
+            max-width: 300px;
+        }
+        button {
+            /* Force reset of box model to prevent misalignment */
+            box-sizing: border-box !important;
+            margin: 0 !important;
+            appearance: none;
+            
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100% !important;
+            padding: 20px;
+            font-size: 18px;
+            font-weight: 500;
+            border-radius: 10px;
+            border: none;
+            color: black;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        button:disabled { opacity: 0.7; cursor: not-allowed; }
+        button:hover {
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        /* Specific Button Gradients */
+        .btn-blue { background-image: linear-gradient(to right, #43e97b 0%, #38f9d7 100%); }
+        .btn-blue:hover { background-image: linear-gradient(to right, #4facfe 0%, #00f2fe 100%); }
+        
+        .btn-orange { background-image: linear-gradient(to right, #f8c76b 0%, #f79d57 100%); }
+        .btn-orange:hover { background-image: linear-gradient(to right, #f79d57 0%, #f8c76b 100%); }
+    </style>
+</head>
+<body>
+    <!-- Container handles the centering and width of the stack -->
+    <div class="container" id="buttonContainer">
+        <button class="btn-blue" onclick="openDialog(this, 'showBorrowDialog')">Borrow</button>
+        <button class="btn-blue" onclick="openDialog(this, 'showReturnDialog')">Return</button>
+        <button class="btn-orange" onclick="openDialog(this, 'showFindDialog')">Find</button>
+    </div>
+    <script>
+        function openDialog(button, functionName) {
+            const btns = document.querySelectorAll('button');
+            btns.forEach(b => b.disabled = true);
+            const originalText = button.textContent;
+            button.textContent = 'Loading...';
+
+            google.script.run
+                .withSuccessHandler(() => google.script.host.close())
+                .withFailureHandler((err) => {
+                    alert('Error: ' + err.message);
+                    btns.forEach(b => b.disabled = false);
+                    button.textContent = originalText;
+                })
+                [functionName]();
+        }
+    </script>
+</body>
+</html>
